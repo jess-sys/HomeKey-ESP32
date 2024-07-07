@@ -1206,6 +1206,7 @@ void gpio_input_task(void *arg) {
       buttonPreviousState = buttonPressed;
     }
   }
+  vTaskDelay(50 / portTICK_PERIOD_MS);
 }
 
 void setup() {
