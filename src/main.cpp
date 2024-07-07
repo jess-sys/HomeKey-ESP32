@@ -1342,7 +1342,7 @@ void setup() {
     pixels.begin();
   }
 
-  xTaskCreate(gpio_input_task, "gpio_inputs", 4096, NULL, 1, NULL);
+  xTaskCreate(gpio_input_task, "gpio_input_task", 4096, NULL, 1, NULL);
   xTaskCreate(gpio_task, "gpio_task", 4096, NULL, 1, NULL);
   xTaskCreate(nfc_thread_entry, "nfc_task", 8192, NULL, 2, NULL);
 }
