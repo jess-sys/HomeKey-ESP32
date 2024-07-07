@@ -53,6 +53,7 @@ namespace espConfig
     std::string lockStateCmd = MQTT_SET_STATE_TOPIC;
     std::string lockCStateCmd = MQTT_SET_CURRENT_STATE_TOPIC;
     std::string lockTStateCmd = MQTT_SET_TARGET_STATE_TOPIC;
+    std::string inputTopic = MQTT_INPUT_TOPIC;
     /* MQTT Custom State */
     std::string lockCustomStateTopic = MQTT_CUSTOM_STATE_TOPIC;
     std::string lockCustomStateCmd = MQTT_CUSTOM_STATE_CTRL_TOPIC;
@@ -82,12 +83,13 @@ namespace espConfig
     bool nfcFailHL = NFC_FAIL_HL;
     bool gpioActionEnable = GPIO_ACTION_ENABLE;
     uint8_t gpioActionPin = GPIO_ACTION_PIN;
+    uint8_t gpioInputPin = GPIO_INPUT_PIN;
     bool gpioActionLockState = GPIO_ACTION_LOCK_STATE;
     bool gpioActionUnlockState = GPIO_ACTION_UNLOCK_STATE;
   } miscConfig;
 }
-JSONCONS_ALL_MEMBER_TRAITS(espConfig::mqttConfig_t, mqttBroker, mqttPort, mqttUsername, mqttPassword, mqttClientId, hkTopic, lockStateTopic, lockStateCmd, lockCStateCmd, lockTStateCmd, lockCustomStateTopic, lockCustomStateCmd, lockEnableCustomState, hassMqttDiscoveryEnabled, customLockStates, customLockActions)
-JSONCONS_ALL_MEMBER_TRAITS(espConfig::misc_config_t, deviceName, hk_key_color, lockAlwaysUnlock, lockAlwaysLock, controlPin, hsStatusPin, nfcSuccessPin, nfcNeopixelPin, nfcSuccessHL, nfcFailPin, nfcFailHL, gpioActionEnable, gpioActionPin, gpioActionLockState, gpioActionUnlockState, otaPasswd, setupCode)
+JSONCONS_ALL_MEMBER_TRAITS(espConfig::mqttConfig_t, mqttBroker, mqttPort, mqttUsername, mqttPassword, mqttClientId, hkTopic, lockStateTopic, lockStateCmd, lockCStateCmd, lockTStateCmd, inputTopic, lockCustomStateTopic, lockCustomStateCmd, lockEnableCustomState, hassMqttDiscoveryEnabled, customLockStates, customLockActions)
+JSONCONS_ALL_MEMBER_TRAITS(espConfig::misc_config_t, deviceName, hk_key_color, lockAlwaysUnlock, lockAlwaysLock, controlPin, hsStatusPin, nfcSuccessPin, nfcNeopixelPin, nfcSuccessHL, nfcFailPin, nfcFailHL, gpioActionEnable, gpioActionPin, gpioActionLockState, gpioActionUnlockState, gpioInputPin, otaPasswd, setupCode)
 
 KeyFlow hkFlow = KeyFlow::kFlowFAST;
 SpanCharacteristic* lockCurrentState;
@@ -672,6 +674,9 @@ String miscHtmlProcess(const String& var) {
   else if (var == "GPIOAUNLOCK") {
     return String(espConfig::miscConfig.gpioActionUnlockState);
   }
+  else if (var == "GPIOINPIN") {
+    return String(espConfig::miscConfig.gpioInputPin);
+  }
   else if (var == "HWFINISH") {
     return String(espConfig::miscConfig.hk_key_color);
   }
@@ -951,6 +956,9 @@ void setupWeb() {
       else if (!strcmp(p->name().c_str(), "gpio-a-unlock")) {
         espConfig::miscConfig.gpioActionUnlockState = p->value().toInt();
       }
+      else if (!strcmp(p->name().c_str(), "gpio-in-pin")) {
+        espConfig::miscConfig.gpioInputPin = p->value().toInt();
+      }
       else if (!strcmp(p->name().c_str(), "hk-hwfinish")) {
         espConfig::miscConfig.hk_key_color = p->value().toInt();
       }
@@ -1188,6 +1196,18 @@ void gpio_task(void* arg) {
   }
 }
 
+void gpio_input_task(void *arg) {
+  bool buttonPressed = false;
+  bool buttonPreviousState = false;
+  while (1) {
+    buttonPressed = (digitalRead(espConfig::miscConfig.gpioInputPin) == LOW);
+    if (buttonPreviousState != buttonPressed) {
+      mqtt_publish(espConfig::mqttData.inputTopic, buttonPressed ? "PRESSED" : "RELEASED", 1, false);
+      buttonPreviousState = buttonPressed;
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   const esp_app_desc_t* app_desc = esp_ota_get_app_description();
@@ -1243,6 +1263,9 @@ void setup() {
   }
   if (espConfig::miscConfig.gpioActionPin && espConfig::miscConfig.gpioActionPin != 255) {
     pinMode(espConfig::miscConfig.gpioActionPin, OUTPUT);
+  }
+  if (espConfig::miscConfig.gpioInputPin && espConfig::miscConfig.gpioActionPin != 255) {
+    pinMode(espConfig::miscConfig.gpioActionPin, INPUT_PULLUP);
   }
   if (!LittleFS.begin(true)) {
     Serial.println("An Error has occurred while mounting LITTLEFS");
@@ -1318,6 +1341,7 @@ void setup() {
     pixels.begin();
   }
 
+  xTaskCreate(gpio_input_task, "gpio_inputs", 4096, NULL, 1, NULL);
   xTaskCreate(gpio_task, "gpio_task", 4096, NULL, 1, NULL);
   xTaskCreate(nfc_thread_entry, "nfc_task", 8192, NULL, 2, NULL);
 }
