@@ -1162,6 +1162,18 @@ void nfc_thread_entry(void* arg) {
   }
 }
 
+void success_tone() {
+  tone(26, 600, 250);
+  tone(26, 600, 100);
+  tone(26, 800, 250);
+}
+
+void fail_tone() {
+  tone(26, 600, 250);
+  tone(26, 600, 100);
+  tone(26, 400, 250);
+}
+
 void gpio_task(void* arg) {
   bool status = false;
   while (1) {
@@ -1171,6 +1183,7 @@ void gpio_task(void* arg) {
         xQueueReceive(gpio_led_handle, &status, 0);
         if (status) {
           if (espConfig::miscConfig.nfcSuccessPin && espConfig::miscConfig.nfcSuccessPin != 255) {
+            success_tone();
             digitalWrite(espConfig::miscConfig.nfcSuccessPin, espConfig::miscConfig.nfcSuccessHL);
             delay(espConfig::miscConfig.nfcSuccessTime);
             digitalWrite(espConfig::miscConfig.nfcSuccessPin, !espConfig::miscConfig.nfcSuccessHL);
@@ -1184,6 +1197,7 @@ void gpio_task(void* arg) {
           }
         } else {
           if (espConfig::miscConfig.nfcFailPin && espConfig::miscConfig.nfcFailPin != 255) {
+            fail_tone();
             digitalWrite(espConfig::miscConfig.nfcFailPin, espConfig::miscConfig.nfcFailHL);
             delay(espConfig::miscConfig.nfcFailTime);
             digitalWrite(espConfig::miscConfig.nfcFailPin, !espConfig::miscConfig.nfcFailHL);
@@ -1208,8 +1222,15 @@ void gpio_input_task(void *arg) {
   while (1) {
     buttonPressed = (digitalRead(espConfig::miscConfig.gpioInputPin) == LOW);
     if (buttonPreviousState != buttonPressed) {
+      if (buttonPressed) {
+        success_tone();
+      }
       mqtt_publish(espConfig::mqttData.inputTopic, buttonPressed ? "PRESSED" : "RELEASED", 1, false);
       buttonPreviousState = buttonPressed;
+      digitalWrite(espConfig::miscConfig.nfcSuccessPin, espConfig::miscConfig.nfcSuccessHL);
+      delay(espConfig::miscConfig.nfcSuccessTime);
+      digitalWrite(espConfig::miscConfig.nfcSuccessPin, !espConfig::miscConfig.nfcSuccessHL);
+
     }
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
