@@ -736,6 +736,9 @@ String mqttHtmlProcess(const String& var) {
   else if (var == "HKTOPIC") {
     return String(espConfig::mqttData.hkTopic.c_str());
   }
+  else if (var == "INPUTTOPIC") {
+    return String(espConfig::mqttData.inputTopic.c_str());
+  }
   else if (var == "STATETOPIC") {
     return String(espConfig::mqttData.lockStateTopic.c_str());
   }
@@ -826,6 +829,9 @@ void setupWeb() {
       }
       else if (!strcmp(p->name().c_str(), "mqtt-hktopic")) {
         espConfig::mqttData.hkTopic = p->value().c_str();
+      }
+      else if (!strcmp(p->name().c_str(), "mqtt-input_topic")) {
+        espConfig::mqttData.inputTopic = p->value().c_str();
       }
       else if (!strcmp(p->name().c_str(), "mqtt-statetopic")) {
         espConfig::mqttData.lockStateTopic = p->value().c_str();
@@ -1205,8 +1211,8 @@ void gpio_input_task(void *arg) {
       mqtt_publish(espConfig::mqttData.inputTopic, buttonPressed ? "PRESSED" : "RELEASED", 1, false);
       buttonPreviousState = buttonPressed;
     }
+    vTaskDelay(50 / portTICK_PERIOD_MS);
   }
-  vTaskDelay(50 / portTICK_PERIOD_MS);
 }
 
 void setup() {
@@ -1265,8 +1271,8 @@ void setup() {
   if (espConfig::miscConfig.gpioActionPin && espConfig::miscConfig.gpioActionPin != 255) {
     pinMode(espConfig::miscConfig.gpioActionPin, OUTPUT);
   }
-  if (espConfig::miscConfig.gpioInputPin && espConfig::miscConfig.gpioActionPin != 255) {
-    pinMode(espConfig::miscConfig.gpioActionPin, INPUT_PULLUP);
+  if (espConfig::miscConfig.gpioInputPin && espConfig::miscConfig.gpioInputPin != 255) {
+    pinMode(espConfig::miscConfig.gpioInputPin, INPUT_PULLUP);
   }
   if (!LittleFS.begin(true)) {
     Serial.println("An Error has occurred while mounting LITTLEFS");
@@ -1342,7 +1348,7 @@ void setup() {
     pixels.begin();
   }
 
-  xTaskCreate(gpio_input_task, "gpio_input_task", 4096, NULL, 1, NULL);
+  xTaskCreate(gpio_input_task, "gpio_input_task", 2048, NULL, 1, NULL);
   xTaskCreate(gpio_task, "gpio_task", 4096, NULL, 1, NULL);
   xTaskCreate(nfc_thread_entry, "nfc_task", 8192, NULL, 2, NULL);
 }
@@ -1350,4 +1356,5 @@ void setup() {
 //////////////////////////////////////
 
 void loop() {
+  vTaskDelay(50 / portTICK_PERIOD_MS);
 }
