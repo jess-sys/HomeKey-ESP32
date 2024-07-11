@@ -53,6 +53,7 @@ namespace espConfig
     std::string lockStateCmd = MQTT_SET_STATE_TOPIC;
     std::string lockCStateCmd = MQTT_SET_CURRENT_STATE_TOPIC;
     std::string lockTStateCmd = MQTT_SET_TARGET_STATE_TOPIC;
+    std::string inputTopic = MQTT_INPUT_TOPIC;
     /* MQTT Custom State */
     std::string lockCustomStateTopic = MQTT_CUSTOM_STATE_TOPIC;
     std::string lockCustomStateCmd = MQTT_CUSTOM_STATE_CTRL_TOPIC;
@@ -82,12 +83,13 @@ namespace espConfig
     bool nfcFailHL = NFC_FAIL_HL;
     bool gpioActionEnable = GPIO_ACTION_ENABLE;
     uint8_t gpioActionPin = GPIO_ACTION_PIN;
+    uint8_t gpioInputPin = GPIO_INPUT_PIN;
     bool gpioActionLockState = GPIO_ACTION_LOCK_STATE;
     bool gpioActionUnlockState = GPIO_ACTION_UNLOCK_STATE;
   } miscConfig;
 }
-JSONCONS_ALL_MEMBER_TRAITS(espConfig::mqttConfig_t, mqttBroker, mqttPort, mqttUsername, mqttPassword, mqttClientId, hkTopic, lockStateTopic, lockStateCmd, lockCStateCmd, lockTStateCmd, lockCustomStateTopic, lockCustomStateCmd, lockEnableCustomState, hassMqttDiscoveryEnabled, customLockStates, customLockActions)
-JSONCONS_ALL_MEMBER_TRAITS(espConfig::misc_config_t, deviceName, hk_key_color, lockAlwaysUnlock, lockAlwaysLock, controlPin, hsStatusPin, nfcSuccessPin, nfcNeopixelPin, nfcSuccessHL, nfcFailPin, nfcFailHL, gpioActionEnable, gpioActionPin, gpioActionLockState, gpioActionUnlockState, otaPasswd, setupCode)
+JSONCONS_ALL_MEMBER_TRAITS(espConfig::mqttConfig_t, mqttBroker, mqttPort, mqttUsername, mqttPassword, mqttClientId, hkTopic, lockStateTopic, lockStateCmd, lockCStateCmd, lockTStateCmd, inputTopic, lockCustomStateTopic, lockCustomStateCmd, lockEnableCustomState, hassMqttDiscoveryEnabled, customLockStates, customLockActions)
+JSONCONS_ALL_MEMBER_TRAITS(espConfig::misc_config_t, deviceName, hk_key_color, lockAlwaysUnlock, lockAlwaysLock, controlPin, hsStatusPin, nfcSuccessPin, nfcNeopixelPin, nfcSuccessHL, nfcFailPin, nfcFailHL, gpioActionEnable, gpioActionPin, gpioActionLockState, gpioActionUnlockState, gpioInputPin, otaPasswd, setupCode)
 
 KeyFlow hkFlow = KeyFlow::kFlowFAST;
 SpanCharacteristic* lockCurrentState;
@@ -672,6 +674,9 @@ String miscHtmlProcess(const String& var) {
   else if (var == "GPIOAUNLOCK") {
     return String(espConfig::miscConfig.gpioActionUnlockState);
   }
+  else if (var == "GPIOINPIN") {
+    return String(espConfig::miscConfig.gpioInputPin);
+  }
   else if (var == "HWFINISH") {
     return String(espConfig::miscConfig.hk_key_color);
   }
@@ -730,6 +735,9 @@ String mqttHtmlProcess(const String& var) {
   }
   else if (var == "HKTOPIC") {
     return String(espConfig::mqttData.hkTopic.c_str());
+  }
+  else if (var == "INPUTTOPIC") {
+    return String(espConfig::mqttData.inputTopic.c_str());
   }
   else if (var == "STATETOPIC") {
     return String(espConfig::mqttData.lockStateTopic.c_str());
@@ -821,6 +829,9 @@ void setupWeb() {
       }
       else if (!strcmp(p->name().c_str(), "mqtt-hktopic")) {
         espConfig::mqttData.hkTopic = p->value().c_str();
+      }
+      else if (!strcmp(p->name().c_str(), "mqtt-input_topic")) {
+        espConfig::mqttData.inputTopic = p->value().c_str();
       }
       else if (!strcmp(p->name().c_str(), "mqtt-statetopic")) {
         espConfig::mqttData.lockStateTopic = p->value().c_str();
@@ -950,6 +961,9 @@ void setupWeb() {
       }
       else if (!strcmp(p->name().c_str(), "gpio-a-unlock")) {
         espConfig::miscConfig.gpioActionUnlockState = p->value().toInt();
+      }
+      else if (!strcmp(p->name().c_str(), "gpio-in-pin")) {
+        espConfig::miscConfig.gpioInputPin = p->value().toInt();
       }
       else if (!strcmp(p->name().c_str(), "hk-hwfinish")) {
         espConfig::miscConfig.hk_key_color = p->value().toInt();
@@ -1148,6 +1162,18 @@ void nfc_thread_entry(void* arg) {
   }
 }
 
+void success_tone() {
+  tone(26, 600, 250);
+  tone(26, 600, 100);
+  tone(26, 800, 250);
+}
+
+void fail_tone() {
+  tone(26, 600, 250);
+  tone(26, 600, 100);
+  tone(26, 400, 250);
+}
+
 void gpio_task(void* arg) {
   bool status = false;
   while (1) {
@@ -1157,6 +1183,7 @@ void gpio_task(void* arg) {
         xQueueReceive(gpio_led_handle, &status, 0);
         if (status) {
           if (espConfig::miscConfig.nfcSuccessPin && espConfig::miscConfig.nfcSuccessPin != 255) {
+            success_tone();
             digitalWrite(espConfig::miscConfig.nfcSuccessPin, espConfig::miscConfig.nfcSuccessHL);
             delay(espConfig::miscConfig.nfcSuccessTime);
             digitalWrite(espConfig::miscConfig.nfcSuccessPin, !espConfig::miscConfig.nfcSuccessHL);
@@ -1170,6 +1197,7 @@ void gpio_task(void* arg) {
           }
         } else {
           if (espConfig::miscConfig.nfcFailPin && espConfig::miscConfig.nfcFailPin != 255) {
+            fail_tone();
             digitalWrite(espConfig::miscConfig.nfcFailPin, espConfig::miscConfig.nfcFailHL);
             delay(espConfig::miscConfig.nfcFailTime);
             digitalWrite(espConfig::miscConfig.nfcFailPin, !espConfig::miscConfig.nfcFailHL);
@@ -1183,6 +1211,26 @@ void gpio_task(void* arg) {
           }
         }
       }
+    }
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+  }
+}
+
+void gpio_input_task(void *arg) {
+  bool buttonPressed = false;
+  bool buttonPreviousState = false;
+  while (1) {
+    buttonPressed = (digitalRead(espConfig::miscConfig.gpioInputPin) == LOW);
+    if (buttonPreviousState != buttonPressed) {
+      if (buttonPressed) {
+        success_tone();
+      }
+      mqtt_publish(espConfig::mqttData.inputTopic, buttonPressed ? "PRESSED" : "RELEASED", 1, false);
+      buttonPreviousState = buttonPressed;
+      digitalWrite(espConfig::miscConfig.nfcSuccessPin, espConfig::miscConfig.nfcSuccessHL);
+      delay(espConfig::miscConfig.nfcSuccessTime);
+      digitalWrite(espConfig::miscConfig.nfcSuccessPin, !espConfig::miscConfig.nfcSuccessHL);
+
     }
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
@@ -1243,6 +1291,9 @@ void setup() {
   }
   if (espConfig::miscConfig.gpioActionPin && espConfig::miscConfig.gpioActionPin != 255) {
     pinMode(espConfig::miscConfig.gpioActionPin, OUTPUT);
+  }
+  if (espConfig::miscConfig.gpioInputPin && espConfig::miscConfig.gpioInputPin != 255) {
+    pinMode(espConfig::miscConfig.gpioInputPin, INPUT_PULLUP);
   }
   if (!LittleFS.begin(true)) {
     Serial.println("An Error has occurred while mounting LITTLEFS");
@@ -1318,6 +1369,7 @@ void setup() {
     pixels.begin();
   }
 
+  xTaskCreate(gpio_input_task, "gpio_input_task", 2048, NULL, 1, NULL);
   xTaskCreate(gpio_task, "gpio_task", 4096, NULL, 1, NULL);
   xTaskCreate(nfc_thread_entry, "nfc_task", 8192, NULL, 2, NULL);
 }
@@ -1325,4 +1377,5 @@ void setup() {
 //////////////////////////////////////
 
 void loop() {
+  vTaskDelay(50 / portTICK_PERIOD_MS);
 }

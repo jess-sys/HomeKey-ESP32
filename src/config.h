@@ -41,6 +41,7 @@ enum customLockActions
 #define MQTT_SET_TARGET_STATE_TOPIC "topic/homekey/set_target_state" // MQTT Control Topic for the HomeKit lock target state
 #define MQTT_SET_CURRENT_STATE_TOPIC "topic/homekey/set_current_state" // MQTT Control Topic for the HomeKit lock current state
 #define MQTT_STATE_TOPIC "topic/homekey/state" // MQTT Topic for publishing the HomeKit lock target state
+#define MQTT_INPUT_TOPIC "topic/homekey/button_input" // MQTT Topic for publishing the HomeKit lock target state
 
 //Miscellaneous
 #define HOMEKEY_COLOR TAN
@@ -62,3 +63,4 @@ enum customLockActions
 #define GPIO_ACTION_PIN 255
 #define GPIO_ACTION_LOCK_STATE LOW
 #define GPIO_ACTION_UNLOCK_STATE HIGH
+#define GPIO_INPUT_PIN 255 // GPIO 25 is free and has pull-up resistor on almost all ESP32
